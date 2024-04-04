@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shortest Path Simulation - City Path Finder</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <style>
+        #map {
+            height: 600px;
+        }
+    </style>
+</head>
+<body>
+
+<!-- Add a form for node selection -->
+<div>
+    <label for="sourceNode">Select Source City:</label>
+    <select id="sourceNode"></select>
+
+    <label for="destinationNode">Select Destination City:</label>
+    <select id="destinationNode"></select>
+
+    <button onclick="startSearch()">Start Search</button>
+</div>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script>
+
+    // Set initial map coordinates to the center of Maharashtra
+    const mapCenter = [19.7515, 75.7139];
+    const mapZoom = 7;
+
+    // Initialize the map
+    const map = L.map('map').setView(mapCenter, mapZoom);
+
+    // Add OpenStreetMap as the base layer
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors'
+    }).addTo(map);
+
+    // Sample graph nodes and connections for cities in Maharashtra
+    const nodes = {
+        "Mumbai": { lat: 19.088446906734877, lng: 72.8742324179555 },
+        "Pune": { lat: 18.531706685770715, lng: 73.8498994081188 },
+        "Nashik": { lat: 19.997073995510608, lng: 73.79283247463114 },
+        "Nagpur": { lat: 21.15972539170414, lng: 79.06356235836944 },
+        "Aurangabad": { lat: 19.872983242006292, lng: 75.34021499537397 },
+        "Solapur": { lat: 17.66472355558626, lng: 75.90968547221513 },
+        "Thane": { lat: 19.220357388833854, lng: 72.980855542108541 },
+        "Amravati": { lat: 20.932229377077118, lng: 77.7576041927276 },
+        "Kolhapur": { lat: 16.70713692851499, lng: 74.23817579356185 },
+        "Akola": { lat: 20.69935936387825, lng: 77.00852848872867 },
+        "Latur": { lat: 18.4112994414723, lng: 76.55803990637438 },
+        // Add more cities as needed
+    };
+
+    const connections = [
+        ['Mumbai', 'Pune', 150],
+        ['Mumbai', 'Nashik', 180],
+        ['Pune', 'Nashik', 200],
+        ['Pune', 'Solapur', 250],
+        ['Pune', 'Aurangabad', 200],
+        ['Aurangabad', 'Nagpur', 350],
+        ['Solapur', 'Latur', 50],
+        ['Solapur', 'Thane', 200],
+        ['Thane', 'Mumbai', 100],
+        ['Kolhapur','Solapur',80],
+        ['Latur','Nagpur',300],
+        ['Amravati','Akola',40],
+        ['Amravati','Nagpur',90]
+        // Add more connections as needed
+    ];
+
+    // Display nodes on the map
+    for (const nodeId in nodes) {
+        const node = nodes[nodeId];
+        L.marker([node.lat, node.lng]).addTo(map).bindPopup(nodeId);
+    }
+
+    // Display connections on the map
+    for (const connection of connections) {
+        const startNode = nodes[connection[0]];
+        const endNode = nodes[connection[1]];
+        L.polyline([[startNode.lat, startNode.lng], [endNode.lat, endNode.lng]], { color: 'blue' }).addTo(map);
+    }
+
+    // Populate dropdowns with city options
+    const sourceNodeDropdown = document.getElementById('sourceNode');
+    const destinationNodeDropdown = document.getElementById('destinationNode');
+
+    for (const nodeId in nodes) {
+        const option = document.createElement('option');
+        option.value = nodeId;
+        option.textContent = nodeId;
+        sourceNodeDropdown.appendChild(option.cloneNode(true));
+        destinationNodeDropdown.appendChild(option.cloneNode(true));
+    }
+
+    // Find the shortest path between two nodes using A*
+    function findShortestPathAStar(startNode, goalNode) {
+        const openSet = [startNode];
+        const cameFrom = {};
+        const gScore = { [startNode]: 0 };
+        const hScore = { [startNode]: heuristic(nodes[startNode], nodes[goalNode]) };
+
+        while (openSet.length > 0) {
+            const current = openSet.shift();
+
+            if (current === goalNode) {
+                return reconstructPath(cameFrom, goalNode);
+            }
+
+            const neighbors = getNeighbors(current);
+
+            for (const neighbor of neighbors) {
+                const tentativeGScore = gScore[current] + connections.find(c => (c[0] === current && c[1] === neighbor) || (c[0] === neighbor && c[1] === current))[2];
+
+                if (!gScore.hasOwnProperty(neighbor) || tentativeGScore < gScore[neighbor]) {
+                    cameFrom[neighbor] = current;
+                    gScore[neighbor] = tentativeGScore;
+                    hScore[neighbor] = heuristic(nodes[neighbor], nodes[goalNode]);
+
+                    if (!openSet.includes(neighbor)) {
+                        openSet.push(neighbor);
+                        openSet.sort((a, b) => (gScore[a] + hScore[a]) - (gScore[b] + hScore[b]));
+                    }
+                }
+            }
+        }
+
+        return null; // No path found
+    }
+
+    // Heuristic function (Euclidean distance)
+    function heuristic(node1, node2) {
+        const dx = node1.lat - node2.lat;
+        const dy = node1.lng - node2.lng;
+        return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    // Reconstruct the path from the start to the goal
+    function reconstructPath(cameFrom, current) {
+        const totalPath = [current];
+        while (cameFrom.hasOwnProperty(current)) {
+            current = cameFrom[current];
+            totalPath.unshift(current);
+        }
+        return totalPath;
+    }
+
+    // Function to start the search based on selected nodes
+    function startSearch() {
+        const sourceNode = sourceNodeDropdown.value;
+        const destinationNode = destinationNodeDropdown.value;
+
+        // Remove existing paths from the map
+        map.eachLayer(layer => {
+            if (layer instanceof L.Polyline) {
+                layer.remove();
+            }
+        });
+
+        // Find the shortest path between source and destination using A*
+        const shortestPath = findShortestPathAStar(sourceNode, destinationNode);
+
+        // Display the shortest path on the map
+        displayPath(shortestPath);
+    }
+
+    // Function to display the path on the map
+    function displayPath(path) {
+        if (!path) {
+            console.log("No path found.");
+            return;
+        }
+
+        const pathCoordinates = path.map(node => [nodes[node].lat, nodes[node].lng]);
+        for (let i = 0; i < pathCoordinates.length - 1; i++) {
+            L.polyline([pathCoordinates[i], pathCoordinates[i + 1]], { color: 'red' }).addTo(map);
+        }
+    }
+
+    // Helper function to get neighbors of a node
+    function getNeighbors(node) {
+        return connections
+            .filter(connection => connection[0] === node || connection[1] === node)
+            .map(connection => (connection[0] === node ? connection[1] : connection[0]));
+    }
+
+</script>
+
+</body>
+</html>
